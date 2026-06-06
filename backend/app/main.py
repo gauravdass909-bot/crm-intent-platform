@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .scheduler import setup_scheduler, scheduler
-from .api.routes import companies, analysis, market_trends, decay, stats
+from .api.routes import companies, analysis, market_trends, decay, stats, research
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -37,6 +37,7 @@ app.include_router(analysis.router, prefix="/api")
 app.include_router(market_trends.router, prefix="/api")
 app.include_router(decay.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
+app.include_router(research.router, prefix="/api")
 
 
 @app.get("/health")

@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { LayoutDashboard, Building2, BarChart3, Clock, Calendar, Settings, Zap } from "lucide-react";
+import { LayoutDashboard, Building2, BarChart3, Clock, Calendar, Settings, Zap, Microscope } from "lucide-react";
 
 const NAV = [
-  { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
-  { icon: Building2, label: "Companies", id: "companies" },
-  { icon: BarChart3, label: "Market", id: "market" },
-  { icon: Clock, label: "History", id: "history" },
-  { icon: Calendar, label: "Schedule", id: "schedule" },
-  { icon: Settings, label: "Settings", id: "settings" },
+  { icon: LayoutDashboard, label: "Dashboard",  id: "dashboard" },
+  { icon: Building2,       label: "Companies",  id: "companies" },
+  { icon: BarChart3,       label: "Market",     id: "market" },
+  { icon: Microscope,      label: "Research",   id: "research" },
+  { icon: Clock,           label: "History",    id: "history" },
+  { icon: Calendar,        label: "Schedule",   id: "schedule" },
+  { icon: Settings,        label: "Settings",   id: "settings" },
 ];
 
 export default function Sidebar({ active, onChange }: { active: string; onChange: (id: string) => void }) {

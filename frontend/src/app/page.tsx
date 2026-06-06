@@ -14,6 +14,7 @@ import CompaniesView from "@/components/views/CompaniesView";
 import MarketView from "@/components/views/MarketView";
 import HistoryView from "@/components/views/HistoryView";
 import ScheduleView from "@/components/views/ScheduleView";
+import ResearchView from "@/components/views/ResearchView";
 import { api } from "@/lib/api";
 import type { Stats, BatchStatus } from "@/lib/api";
 
@@ -177,6 +178,7 @@ export default function Dashboard() {
 
           {activeNav === "companies" && <CompaniesView />}
           {activeNav === "market" && <MarketView />}
+          {activeNav === "research" && <ResearchView />}
           {activeNav === "history" && <HistoryView />}
           {activeNav === "schedule" && <ScheduleView />}
           {/* Floating Analyze button — visible on all views */}

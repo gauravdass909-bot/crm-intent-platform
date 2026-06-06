@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     max_companies_per_batch: int = 500
     min_signals_for_qualification: int = 2
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

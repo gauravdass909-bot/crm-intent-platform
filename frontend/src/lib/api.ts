@@ -147,6 +147,14 @@ export const api = {
 
   analyzeUrl: (url: string) => post<AnalyzeResult>("/companies/analyze", { url }),
 
+  startResearch: (company_name: string, company_url: string) =>
+    post<{ job_id: string; status: string }>("/research/start", { company_name, company_url }),
+
+  getResearchStatus: (job_id: string) =>
+    get<{ job_id: string; status: string; progress_pct: number; message: string; company_name: string; company_domain: string; error: string | null }>(`/research/${job_id}/status`),
+
+  getResearchReport: (job_id: string) => get<Record<string, unknown>>(`/research/${job_id}/report`),
+
   triggerBatch: () => post<{ message: string; status: string }>("/analysis/run"),
 
   getBatchStatus: () => get<BatchStatus>("/analysis/status"),
