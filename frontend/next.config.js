@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async rewrites() {
+    // In production (Vercel) the Python function handles /api/* directly
+    if (process.env.NODE_ENV === "production") return [];
     return [
       {
         source: "/api/:path*",
