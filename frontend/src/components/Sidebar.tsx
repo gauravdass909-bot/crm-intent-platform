@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { LayoutDashboard, Building2, BarChart3, Clock, Calendar, Settings, Zap, Microscope } from "lucide-react";
+import { useSession, signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import {
+  LayoutDashboard, Building2, BarChart3, Clock, Calendar,
+  Settings, Zap, Microscope, LogOut, Shield,
+} from "lucide-react";
 
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard",  id: "dashboard" },
@@ -13,15 +17,26 @@ const NAV = [
   { icon: Settings,        label: "Settings",   id: "settings" },
 ];
 
-export default function Sidebar({ active, onChange }: { active: string; onChange: (id: string) => void }) {
-  return (
-    <aside className="fixed left-0 top-0 h-full w-[68px] flex flex-col items-center py-5 gap-2 z-50"
-      style={{ background: "#0e0e11" }}>
+function initials(name: string) {
+  return (name || "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
+}
 
+export default function Sidebar({ active, onChange }: { active: string; onChange: (id: string) => void }) {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const isAdmin = session?.user?.role === "admin";
+
+  return (
+    <aside
+      className="fixed left-0 top-0 h-full w-[68px] flex flex-col items-center py-5 gap-2 z-50"
+      style={{ background: "#0e0e11" }}
+    >
       {/* Logo */}
       <div className="mb-4 flex flex-col items-center gap-1">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: "linear-gradient(135deg, #a3ff6e 0%, #4ade80 100%)" }}>
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center"
+          style={{ background: "linear-gradient(135deg, #a3ff6e 0%, #4ade80 100%)" }}
+        >
           <Zap className="w-5 h-5 text-black" fill="black" />
         </div>
       </div>
@@ -40,8 +55,10 @@ export default function Sidebar({ active, onChange }: { active: string; onChange
             }}
           >
             {active === id && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
-                style={{ background: "#a3ff6e" }} />
+              <span
+                className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
+                style={{ background: "#a3ff6e" }}
+              />
             )}
             <Icon className="w-[18px] h-[18px]" />
             <span className="absolute left-14 bg-gray-800 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity">
@@ -51,10 +68,44 @@ export default function Sidebar({ active, onChange }: { active: string; onChange
         ))}
       </nav>
 
-      {/* User avatar */}
-      <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-gray-700 flex items-center justify-center text-xs font-bold"
-        style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", color: "white" }}>
-        G
+      {/* Bottom: admin link + logout + user avatar */}
+      <div className="flex flex-col items-center gap-1 mt-2">
+        {/* Admin panel — only for admins */}
+        {isAdmin && (
+          <button
+            onClick={() => router.push("/admin")}
+            title="Admin Panel"
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all relative group"
+            style={{ color: "#a3ff6e" }}
+          >
+            <Shield className="w-[18px] h-[18px]" />
+            <span className="absolute left-14 bg-gray-800 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity">
+              Admin Panel
+            </span>
+          </button>
+        )}
+
+        {/* Logout */}
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          title={`Sign out (${session?.user?.email ?? ""})`}
+          className="w-10 h-10 rounded-xl flex items-center justify-center transition-all relative group"
+          style={{ color: "#555566" }}
+        >
+          <LogOut className="w-[18px] h-[18px]" />
+          <span className="absolute left-14 bg-gray-800 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity">
+            Sign Out
+          </span>
+        </button>
+
+        {/* User avatar */}
+        <div
+          title={session?.user?.name ?? session?.user?.email ?? ""}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-black mt-1 cursor-default"
+          style={{ background: "linear-gradient(135deg, #a3ff6e 0%, #4ade80 100%)" }}
+        >
+          {initials(session?.user?.name ?? session?.user?.email ?? "?")}
+        </div>
       </div>
     </aside>
   );
