@@ -4,8 +4,9 @@ import os
 # Make backend package importable
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
 
-# Vercel uses ephemeral /tmp — point SQLite there
-os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/intent_platform.db")
+# DATABASE_URL is set as a Vercel environment variable (Supabase PostgreSQL)
+# Only fall back to SQLite if not provided at all
+if not os.environ.get("DATABASE_URL"):
+    os.environ["DATABASE_URL"] = "sqlite:////tmp/intent_platform.db"
 
-# API keys are set as Vercel environment variables
 from app.main import app  # noqa: E402  (exported as ASGI handler)
