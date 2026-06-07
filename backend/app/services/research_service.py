@@ -1,22 +1,13 @@
 """
 B2B Sales Intelligence Research Service
 
-Model verification:
-  - Research:  Gemini 2.5 Flash with Google Search grounding
-                (confirmed to support the 'google_search' tool in google-generativeai SDK)
-  - Analysis:  Claude Sonnet — structured JSON reasoning across 9 report sections
-
-Gemini 1.5 and earlier used 'google_search_retrieval'.
-Gemini 2.0+ uses 'google_search' — both handled by _SEARCH_TOOL in gemini_client.py.
+Model:  Gemini (grounded search with fallback chain) → Claude Sonnet (9-section JSON)
 """
 
 import json
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import google.generativeai as genai
 from .claude_client import client as claude_client, CLAUDE_MODEL
-from .gemini_client import _SEARCH_TOOL, _extract_json_from_text
+from .gemini_client import _generate_with_fallback, _extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -31,23 +22,43 @@ _ANALYST_SYSTEM = (
 # ── Gemini grounded search ────────────────────────────────────────────────────
 
 def _gemini_search(query: str) -> str:
-    """Single grounded Gemini 2.5 Flash search, returns natural language text."""
+    """Grounded search with model fallback chain; returns natural language text."""
+    text = _generate_with_fallback(query, grounded=True)
+    return text[:9000] if text else ""
+
+
+def _claude_knowledge_research(company_name: str, company_domain: str) -> str:
+    """Fallback: use Claude's training knowledge when Gemini is fully rate-limited."""
+    logger.warning(f"Gemini unavailable — falling back to Claude knowledge for {company_name}")
+    prompt = (
+        f"Provide comprehensive B2B sales intelligence on {company_name} (domain: {company_domain}).\n\n"
+        "Include:\n"
+        "1. Company overview, business model, products/services, revenue estimate, employee count\n"
+        "2. Geographic presence, strategic priorities, recent known news/events\n"
+        "3. Funding history / public listing status\n"
+        "4. Known technology and CRM stack\n"
+        "5. Leadership team: CEO, CTO, CFO, CRO, VP Sales, VP Marketing (names and titles)\n"
+        "6. Competitive landscape and likely CRM buying signals\n"
+        "7. Digital transformation or technology modernisation initiatives\n\n"
+        "Be specific. Use real facts you know. Do not hallucinate URLs."
+    )
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            tools=[_SEARCH_TOOL],
+        resp = claude_client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}],
         )
-        resp = model.generate_content(query)
-        return resp.text.strip()[:9000]
+        return resp.content[0].text
     except Exception as e:
-        logger.warning(f"Grounded search failed ({query[:60]}…): {e}")
+        logger.error(f"Claude knowledge fallback failed for {company_name}: {e}")
         return ""
 
 
 def _gather_intelligence(company_name: str, company_domain: str) -> str:
     """
-    Run 3 parallel Gemini Search-grounded queries and concatenate results.
-    Topics: (1) company overview + tech stack, (2) people + hiring, (3) competitive + signals.
+    Run 3 sequential Gemini Search-grounded queries and concatenate results.
+    Sequential to avoid hammering rate limits simultaneously.
+    Falls back to Claude training knowledge if Gemini is fully unavailable.
     """
     queries = [
         (
@@ -73,12 +84,16 @@ def _gather_intelligence(company_name: str, company_domain: str) -> str:
     ]
 
     parts = []
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        futures = {ex.submit(_gemini_search, q): i for i, q in enumerate(queries)}
-        for future in as_completed(futures):
-            text = future.result()
-            if text:
-                parts.append(text)
+    for q in queries:
+        text = _gemini_search(q)
+        if text:
+            parts.append(text)
+
+    if not parts:
+        # All Gemini calls failed — use Claude's training knowledge
+        fallback = _claude_knowledge_research(company_name, company_domain)
+        if fallback:
+            parts.append(fallback)
 
     combined = "\n\n=====\n\n".join(parts)
     logger.info(f"Research gathered: {len(combined):,} chars for {company_name}")
@@ -95,18 +110,23 @@ def _claude(prompt: str, max_tokens: int = 7500) -> dict:
             system=_ANALYST_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = _extract_json_from_text(resp.content[0].text)
+        raw_text = resp.content[0].text
+        raw = _extract_json_from_text(raw_text)
         return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.error(f"Claude JSON parse error: {e} | raw preview: {raw_text[:400] if 'raw_text' in dir() else 'N/A'}")
+        return {}
     except Exception as e:
-        logger.error(f"Claude generation failed: {e}")
+        logger.error(f"Claude generation failed: {type(e).__name__}: {e}")
         return {}
 
 
-def _sections_1_3(company_name: str, research: str) -> dict:
-    return _claude(f"""Using this web-grounded research on {company_name}, produce sections 1–3.
+def _section_1(company_name: str, research: str) -> dict:
+    """Company intelligence — kept separate to stay within output token limits."""
+    return _claude(f"""Using this research on {company_name}, produce the company intelligence section.
 
 RESEARCH:
-{research[:11000]}
+{research[:9000]}
 
 Return JSON (no fences):
 {{
@@ -116,7 +136,7 @@ Return JSON (no fences):
     "products_services": ["Product/service 1", "Product/service 2"],
     "industry": "Industry",
     "market_segment": "Enterprise/Mid-market/SMB etc.",
-    "revenue_estimate": "Revenue range with basis (e.g. 'est. $200M–$400M ARR, Series D company')",
+    "revenue_estimate": "Revenue range with basis",
     "employee_count": "Headcount or range",
     "geographic_presence": ["Country/region 1", "Region 2"],
     "recent_news": [
@@ -130,7 +150,19 @@ Return JSON (no fences):
       "other_tools": ["Tool 1", "Tool 2"]
     }},
     "hiring_trends": ["Specific trend with example roles", "Trend 2"]
-  }},
+  }}
+}}""", max_tokens=4000)
+
+
+def _sections_2_3(company_name: str, research: str) -> dict:
+    """Stakeholders + competitive landscape — separate call to stay within token limits."""
+    return _claude(f"""Using this research on {company_name}, produce stakeholder mapping and competitive landscape.
+
+RESEARCH:
+{research[:9000]}
+
+Return JSON (no fences):
+{{
   "stakeholder_mapping": [
     {{
       "name": "Real name if found, else 'Likely [Title]'",
@@ -149,7 +181,7 @@ Return JSON (no fences):
     "crm_migration_examples_in_industry": ["Similar company that migrated + from/to"],
     "competitor_positioning_gaps": ["Gap we can exploit 1", "Gap 2"]
   }}
-}}""")
+}}""", max_tokens=7000)
 
 
 def _sections_4_5(company_name: str, research: str) -> dict:
@@ -198,16 +230,12 @@ Return JSON (no fences):
 }}""")
 
 
-def _sections_6_9(company_name: str, research: str, sections_1_3: dict) -> dict:
-    crm = (sections_1_3.get("company_intelligence", {})
-                        .get("tech_stack", {})
-                        .get("crm", "their current CRM"))
-    industry = sections_1_3.get("company_intelligence", {}).get("industry", "their industry")
-
-    return _claude(f"""Using this web-grounded research on {company_name} (Industry: {industry}, Current CRM: {crm}), produce sections 6–9.
+def _section_6(company_name: str, research: str, crm: str, industry: str) -> dict:
+    """Outreach strategy — email sequence + LinkedIn + call script."""
+    return _claude(f"""Using this research on {company_name} (Industry: {industry}, Current CRM: {crm}), write the outreach strategy.
 
 RESEARCH:
-{research[:10000]}
+{research[:8000]}
 
 Return JSON (no fences):
 {{
@@ -287,7 +315,19 @@ Return JSON (no fences):
       ],
       "meeting_booking_script": "Full script to book discovery call — specific to {company_name} context"
     }}
-  }},
+  }}
+}}""", max_tokens=6000)
+
+
+def _sections_7_9(company_name: str, research: str, crm: str, industry: str) -> dict:
+    """Content recommendations + competitive battlecard + executive summary."""
+    return _claude(f"""Using this research on {company_name} (Industry: {industry}, Current CRM: {crm}), produce sections 7–9.
+
+RESEARCH:
+{research[:8000]}
+
+Return JSON (no fences):
+{{
   "content_recommendations": {{
     "blog_topics": [
       {{"title": "Specific blog title", "rationale": "Why relevant to {company_name} in {industry}"}},
@@ -341,7 +381,7 @@ Return JSON (no fences):
       "Week 4: Specific actions and review"
     ]
   }}
-}}""", max_tokens=8000)
+}}""", max_tokens=7000)
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -367,25 +407,36 @@ def generate_research_report(
     if not research.strip():
         raise ValueError(f"No research data returned for '{company_name}'")
 
-    _progress("Generating company intelligence, stakeholders & competitive landscape…", 28)
-    s1_3 = _sections_1_3(company_name, research)
+    _progress("Generating company intelligence…", 20)
+    s1 = _section_1(company_name, research)
 
-    _progress("Building sales opportunity analysis & ABM strategy…", 55)
+    _progress("Mapping stakeholders & competitive landscape…", 35)
+    s2_3 = _sections_2_3(company_name, research)
+
+    _progress("Building sales opportunity analysis & ABM strategy…", 52)
     s4_5 = _sections_4_5(company_name, research)
 
-    _progress("Writing outreach sequences, content plan & executive summary…", 78)
-    s6_9 = _sections_6_9(company_name, research, s1_3)
+    crm = s1.get("company_intelligence", {}).get("tech_stack", {}).get("crm", "their current CRM")
+    industry = s1.get("company_intelligence", {}).get("industry", "their industry")
+
+    _progress("Writing outreach email sequence, LinkedIn & call scripts…", 68)
+    s6 = _section_6(company_name, research, crm, industry)
+
+    _progress("Building content plan, battlecard & executive summary…", 84)
+    s7_9 = _sections_7_9(company_name, research, crm, industry)
 
     _progress("Report complete", 100)
 
     return {
-        **s1_3,
+        **s1,
+        **s2_3,
         **s4_5,
-        **s6_9,
+        **s6,
+        **s7_9,
         "_meta": {
             "company_name": company_name,
             "company_domain": company_domain,
-            "research_model": "gemini-2.5-flash (Google Search Grounding — confirmed)",
+            "research_model": "gemini-2.5-flash → 2.0-flash → 2.0-flash-lite (with grounding fallback)",
             "analysis_model": CLAUDE_MODEL,
         },
     }
