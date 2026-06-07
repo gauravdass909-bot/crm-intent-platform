@@ -41,8 +41,11 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 }
 
+type AppSession = { user: { id: string; role: string; name?: string | null; email?: string | null } }
+
 export default function AdminPage() {
-  const { data: session, status } = useSession()
+  const { data: rawSession, status } = useSession()
+  const session = rawSession as AppSession | null
   const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)

@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { supabaseAdmin } from "@/lib/supabase-admin"
+import { getSupabaseAdmin } from "@/lib/supabase-admin"
 
-function isAdmin(session: Awaited<ReturnType<typeof getServerSession>>) {
-  return session?.user?.role === "admin"
+async function requireAdmin() {
+  const session = await getServerSession(authOptions)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const role = (session as any)?.user?.role
+  return role === "admin" ? session : null
 }
 
 // GET /api/admin/users — list all users
 export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!isAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const session = await requireAdmin()
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 })
+  const { data, error } = await getSupabaseAdmin().auth.admin.listUsers({ page: 1, perPage: 200 })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const users = data.users.map((u) => ({
@@ -31,17 +34,17 @@ export async function GET() {
 
 // POST /api/admin/users — create a user
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!isAdmin(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const session = await requireAdmin()
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { email, password, name, role } = await req.json()
   if (!email || !password)
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
 
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+  const { data, error } = await getSupabaseAdmin().auth.admin.createUser({
     email,
     password,
-    email_confirm: true, // skip email verification — admin pre-approves users
+    email_confirm: true,
     user_metadata: { name: name || email, role: role || "user" },
   })
 

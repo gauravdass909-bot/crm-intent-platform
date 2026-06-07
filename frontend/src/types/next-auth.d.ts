@@ -1,4 +1,6 @@
-import NextAuth from "next-auth"
+// export {} makes this a module so the declare module below is an augmentation,
+// not an ambient replacement of the entire next-auth package.
+export {}
 
 declare module "next-auth" {
   interface User {
@@ -8,8 +10,9 @@ declare module "next-auth" {
     user: {
       id: string
       role: string
-      email: string
-      name: string
+      email?: string | null
+      name?: string | null
+      image?: string | null
     }
   }
 }
@@ -17,5 +20,6 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     role?: string
+    sub: string
   }
 }
